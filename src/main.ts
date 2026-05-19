@@ -1,8 +1,14 @@
 // main.ts — Orchestrator.
 
-import { initDetector, detectFaces } from "./detector";
+import { initDetector, detectFaces, type FaceBox } from "./detector";
 import { initSegmenter, segmentFrame, type SegmentationMask } from "./segmenter";
-import { frameToAscii, drawAsciiToCanvas, type AsciiFrame, type RampName } from "./ascii";
+import {
+  frameToAscii,
+  drawAsciiToCanvas,
+  type AsciiFrame,
+  type RampName,
+  type SourceRect,
+} from "./ascii";
 
 const $ = <T extends HTMLElement>(id: string) => {
   const el = document.getElementById(id);
@@ -45,25 +51,41 @@ interface State {
   lastFit: { cols: number; rows: number; w: number; h: number } | null;
   /** Most recent rendered frame — used by the snapshot button. */
   lastFrame: AsciiFrame | null;
+  /** EMA-smoothed face box in unmirrored video pixels (raw detector output). */
+  smoothFace: FaceBox | null;
 }
 
 const state: State = {
   mode: "dom",
-  cols: 180,
+  cols: 200,
   ramp: "standard",
   invert: false,
   lastMask: null,
   lastDetectAt: 0,
   lastFaceSeenAt: 0,
-  // Segmenter + detector at ~30Hz max; render every animation frame.
-  detectionIntervalMs: 1000 / 30,
-  presenceGraceMs: 400,
+  // Run segment + detect at a deliberately lower rate so the EMA-smoothed crop
+  // glides between updates instead of snapping every frame. Prioritises mask
+  // quality and crop stability over reaction speed.
+  detectionIntervalMs: 1000 / 12,
+  presenceGraceMs: 700,
   frameCount: 0,
   lastFpsAt: performance.now(),
   running: false,
   lastFit: null,
   lastFrame: null,
+  smoothFace: null,
 };
+
+// Asymmetric padding around the detector bbox. BlazeFace boxes are tight on
+// the face; expand generously so ears, hair, and a bit of neck/shoulders are
+// retained in the ASCII output.
+const PAD_TOP = 0.75; // hair
+const PAD_BOTTOM = 0.40; // chin / neck
+const PAD_SIDES = 0.75; // ears — BlazeFace boxes are very tight on the face,
+// so we need generous side padding so the ear region is actually inside the
+// sampled crop even when the head turns.
+// EMA weight on each detection. Lower = smoother / slower crop motion.
+const FACE_EMA_ALPHA = 0.18;
 
 function setStatus(text: string, kind: "init" | "ok" | "warn" | "err" = "init") {
   statusEl.textContent = text;
@@ -213,10 +235,17 @@ function loop(now: number) {
       if (mask) state.lastMask = mask;
       const faces = detectFaces(video, now);
       if (faces.length > 0) {
-        const best = faces.reduce((a, b) => (a.score >= b.score ? a : b));
+        // Largest face wins — closer to camera, less likely to be a face on
+        // a poster in the background.
+        const best = faces.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
         state.lastFaceSeenAt = now;
+        state.smoothFace = smoothFaceBox(state.smoothFace, best);
         setStatus(`FACE ${(best.score * 100).toFixed(0)}%`, "ok");
       } else if (now - state.lastFaceSeenAt > state.presenceGraceMs) {
+        // Grace expired without a sighting — drop the stale smoothed box so the
+        // next detection snaps to the new face instead of EMA-panning from the
+        // old position.
+        state.smoothFace = null;
         setStatus("SCAN", "warn");
       }
     } catch (err) {
@@ -228,7 +257,8 @@ function loop(now: number) {
   // produce ghosts when nobody is actually there.
   const present = now - state.lastFaceSeenAt <= state.presenceGraceMs;
 
-  if (present && state.lastMask) {
+  if (present && state.lastMask && state.smoothFace) {
+    const sourceRect = paddedCrop(state.smoothFace, video.videoWidth, video.videoHeight);
     const frame = frameToAscii({
       video,
       sampler,
@@ -236,6 +266,7 @@ function loop(now: number) {
       cols: state.cols,
       ramp: state.ramp,
       invert: state.invert,
+      sourceRect,
     });
     if (frame) {
       state.lastFrame = frame;
@@ -267,6 +298,34 @@ function loop(now: number) {
   }
 
   requestAnimationFrame(loop);
+}
+
+// EMA-smooth the face box so the crop drifts smoothly instead of snapping.
+function smoothFaceBox(prev: FaceBox | null, next: FaceBox): FaceBox {
+  if (!prev) return { ...next };
+  const a = FACE_EMA_ALPHA;
+  return {
+    x: prev.x * (1 - a) + next.x * a,
+    y: prev.y * (1 - a) + next.y * a,
+    w: prev.w * (1 - a) + next.w * a,
+    h: prev.h * (1 - a) + next.h * a,
+    score: next.score,
+  };
+}
+
+// Expand a face bbox by asymmetric padding (more on top for hair, sides for
+// ears) and clamp to the video frame. Returned in unmirrored video pixels.
+function paddedCrop(face: FaceBox, vw: number, vh: number): SourceRect {
+  const left = Math.max(0, face.x - face.w * PAD_SIDES);
+  const right = Math.min(vw, face.x + face.w * (1 + PAD_SIDES));
+  const top = Math.max(0, face.y - face.h * PAD_TOP);
+  const bottom = Math.min(vh, face.y + face.h * (1 + PAD_BOTTOM));
+  return {
+    x: left,
+    y: top,
+    w: Math.max(1, right - left),
+    h: Math.max(1, bottom - top),
+  };
 }
 
 // Dynamically size the DOM <pre> so ASCII fills the stage cleanly.
