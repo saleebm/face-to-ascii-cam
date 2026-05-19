@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FACE//ASCII</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=VT323&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="scanlines"></div>
+
+    <header class="hud">
+      <div class="hud-left">
+        <span class="dot"></span>
+        <span class="title">FACE//ASCII</span>
+        <span class="ver">v0.1</span>
+      </div>
+      <div class="hud-right">
+        <span id="status" class="status">INIT</span>
+        <span id="fps" class="fps">-- fps</span>
+      </div>
+    </header>
+
+    <main class="stage">
+      <!-- Hidden source nodes — never shown to the user. -->
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="sampler"></canvas>
+
+      <!-- DOM-text ASCII output -->
+      <pre id="ascii-text" class="ascii-pane" aria-hidden="true"></pre>
+
+      <!-- Canvas ASCII output -->
+      <canvas id="ascii-canvas" class="ascii-pane hidden"></canvas>
+
+      <div id="placeholder" class="placeholder">
+        <p>NO SIGNAL</p>
+        <p class="sub">grant camera access to begin</p>
+        <button id="start" type="button">[ INITIALIZE ]</button>
+      </div>
+    </main>
+
+    <footer class="hud bottom">
+      <div class="hud-left controls">
+        <label>
+          MODE
+          <select id="mode">
+            <option value="dom">DOM-TEXT</option>
+            <option value="canvas">CANVAS</option>
+          </select>
+        </label>
+        <label>
+          DENSITY
+          <input id="density" type="range" min="60" max="280" value="180" />
+          <span id="density-val">90</span>
+        </label>
+        <label>
+          RAMP
+          <select id="ramp">
+            <option value="standard">STANDARD</option>
+            <option value="dense">DENSE</option>
+            <option value="blocks">BLOCKS</option>
+            <option value="binary">BINARY</option>
+          </select>
+        </label>
+        <label class="toggle">
+          <input id="invert" type="checkbox" />
+          INVERT
+        </label>
+        <button id="snapshot" type="button" class="snap-btn" disabled>[ SNAPSHOT ]</button>
+        <button id="save-txt" type="button" class="snap-btn" disabled>[ SAVE TXT ]</button>
+      </div>
+      <div class="hud-right">
+        <span id="msg" class="msg"></span>
+      </div>
+    </footer>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
