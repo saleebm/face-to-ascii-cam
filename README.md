@@ -2,6 +2,8 @@
 
 Live webcam → face detection → ASCII art. Only the face is rendered. Runs entirely in-browser; Bun just serves the bundled frontend.
 
+Example output: [`face-ascii-1779157141651.txt`](./face-ascii-1779157141651.txt).
+
 ## Stack
 
 - **Bun 1.3+** — `Bun.serve({ routes })` with HTML imports bundles the TS/CSS automatically. No webpack/vite.
